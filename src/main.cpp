@@ -155,8 +155,8 @@ cv::Mat combinePair (cv::Mat& img1, cv::Mat& img2) {
     }
 
     cv::Mat A = cv::estimateRigidTransform(src_pts, dst_pts, false);
-    int height1 = img1.rows, width1 = img1.cols;
-    int height2 = img2.rows, width2 = img2.cols;
+    float height1 = static_cast<float>(img1.rows), width1 = static_cast<float>(img1.cols);
+    float height2 = static_cast<float>(img2.rows), width2 = static_cast<float>(img2.cols);
 
     std::vector<std::vector<float>> corners1 {{0,0},{0,height1},{width1,height1},{width1,0}};
     std::vector<std::vector<float>> corners2 {{0,0},{0,height2},{width2,height2},{width2,0}};
@@ -295,32 +295,30 @@ void getImageList (std::vector<cv::Mat>& imageList,
     }
 }
 
-void changePerspective (std::vector<cv::Mat>& imageList,
-                        std::vector<imageData>& dataMatrix) {
+void changePerspective(std::vector<cv::Mat>& imageList,
+    std::vector<imageData>& dataMatrix) {
     std::cout << "Warping Images Now" << std::endl;
     int n = imageList.size();
     for (int i = 0; i < n; i++) {
-        cv::Mat M = computeUnRotMatrix (dataMatrix[i]);
-        cv::Mat correctedImage = warpPerspectiveWithPadding (imageList[i], M);
-
-        cv::imwrite ("/home/ksakash/misc/Drone-Image-Stitching/temp/"
-                     +dataMatrix[i].imageName, correctedImage);
+        cv::Mat M = computeUnRotMatrix(dataMatrix[i]);
+        cv::Mat correctedImage = warpPerspectiveWithPadding(imageList[i], M);
+        cv::imwrite("../../output/temp/" + dataMatrix[i].imageName, correctedImage);
     }
     std::cout << "Image Warping Done" << std::endl;
 }
 
-int main () {
-    std::string filename = "/home/ksakash/misc/Drone-Image-Stitching/datasets/imageData.txt";
+int main() {
+    std::string filename = "../../input/image_catalog.txt";
     std::vector<imageData> dataMatrix;
-    readData (filename, dataMatrix);
+    readData(filename, dataMatrix);
     std::vector<cv::Mat> imageList;
-    std::string base_path = "/home/ksakash/misc/Drone-Image-Stitching/datasets/images/";
-    getImageList (imageList, dataMatrix, base_path);
-    changePerspective (imageList, dataMatrix);
+    std::string base_path = "../../input/";
+    getImageList(imageList, dataMatrix, base_path);
+    changePerspective(imageList, dataMatrix);
     imageList.clear();
-    base_path = "/home/ksakash/misc/Drone-Image-Stitching/temp/";
-    getImageList (imageList, dataMatrix, base_path);
-    cv::Mat result = combine (imageList);
-    cv::imwrite ("/home/ksakash/misc/Drone-Image-Stitching/results/result.png", result);
+    base_path = "../../output/temp/";
+    getImageList(imageList, dataMatrix, base_path);
+    cv::Mat result = combine(imageList);
+    cv::imwrite("../../output/result.png", result);
     return 0;
 }
