@@ -49,10 +49,7 @@ cv::Mat computeUnRotMatrix (imageData& pose) {
     Rx << 1, 0, 0,
           0, cos (g), -sin (g),
           0, sin (g), cos (g);
-    Matrix3d R = Rz * (Rx * Ry);
-    R(0,2) = 0;
-    R(1,2) = 0;
-    R(2,2) = 1;
+    Matrix3d R = Rz * (Ry * Rx);
     Matrix3d Rtrans = R.transpose ();
     Matrix3d InvR = Rtrans.inverse ();
     cv::Mat transformation = (cv::Mat_<double>(3,3) << InvR(0,0), InvR(0,1), InvR(0,2),
