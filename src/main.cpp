@@ -33,10 +33,84 @@ struct imageData {
     double yaw = 0;
 };
 
-cv::Mat computeUnRotMatrix (imageData& pose) {
+struct imageSize2d {
+    float width = 0.;
+    float height = 0.;
+    float scale = 0.;
+
+    float getNewWidth() {
+        if (scale == 0)
+        {
+            return 0.;
+        }
+        else
+        {
+            return width / scale;
+        }
+    }
+
+    float getNewHeight() {
+        if (scale == 0)
+        {
+            return 0.;
+        }
+        else
+        {
+            return height / scale;
+        }
+    }
+};
+
+inline ostream& operator<<(ostream& oss, const imageSize2d& other)
+{
+    oss << "width: " << other.width << ", height: " << other.height << ", scale: " << other.scale;
+    return oss;
+}
+
+struct imageRange2d {
+    int max_x = 0;
+    int min_x = 0;
+    int max_y = 0;
+    int min_y = 0;
+
+    int getWidth() {
+        int w = max_x - min_x;
+        std::cout << "width = " << w << std::endl;
+        return w;
+    }
+
+    int getHeight() {
+        int h = max_y - min_y;
+        std::cout << "height = " << h << std::endl;
+        return h;
+    }
+};
+
+inline ostream& operator<<(ostream& oss, const imageRange2d& other)
+{
+    oss << "min_x: " << other.min_x << ", max_x: " << other.max_x << ", min_y: " << other.min_y << ", max_y: " << other.max_y;
+    return oss;
+}
+
+void printMat(cv::Mat& mat) {
+    int rows = mat.rows;
+    int cols = mat.cols;
+    for (int i = 0; i < rows; i++) {
+        for (int j = 0; j < cols; j++) {
+            std::cout << mat.at<double>(i, j) << " ";
+        }
+        std::cout << std::endl;
+    }
+}
+
+void getTransformationToOriginPlane (imageData& pose, cv::Mat& transformation) {
+    
+    // get our 3 rotation angles
     double a = (pose.yaw * PI) / 180;
     double b = (pose.pitch * PI) / 180;
     double g = (pose.roll * PI) / 180;
+
+    // compute the rotation matrix per axis
     Matrix3d Rz;
     Rz << cos (a), -sin (a), 0,
           sin (a), cos (a), 0,
@@ -49,57 +123,101 @@ cv::Mat computeUnRotMatrix (imageData& pose) {
     Rx << 1, 0, 0,
           0, cos (g), -sin (g),
           0, sin (g), cos (g);
-    Matrix3d R = Rz * (Ry * Rx);
+
+    // rotate back to origin plane in roll-pitch-yaw order
+    Matrix3d R = Rz * (Ry * Rx); 
+
+    // do not adjust any rotations made around the z-axis
+    R(0, 2) = 0;
+    R(1, 2) = 0;
+    R(2, 2) = 1;
+
+    // create the final transformation
     Matrix3d Rtrans = R.transpose ();
     Matrix3d InvR = Rtrans.inverse ();
-    cv::Mat transformation = (cv::Mat_<double>(3,3) << InvR(0,0), InvR(0,1), InvR(0,2),
-                                                       InvR(1,0), InvR(1,1), InvR(1,2),
-                                                       InvR(2,0), InvR(2,1), InvR(2,2));
-    return transformation;
+    transformation = (cv::Mat_<double>(3,3) << InvR(0,0), InvR(0,1), InvR(0,2),
+                                               InvR(1,0), InvR(1,1), InvR(1,2),
+                                               InvR(2,0), InvR(2,1), InvR(2,2));
 }
 
-void printMat (cv::Mat& mat) {
-    int rows = mat.rows;
-    int cols = mat.cols;
-    for (int i = 0; i < rows; i++) {
-        for (int j = 0; j < cols; j++) {
-            std::cout << mat.at<double>(i,j) << " ";
-        }
-        std::cout << std::endl;
+void getScaledPaddedTransformation(cv::Mat& transformation, imageSize2d& size2d, cv::Mat& padded_transformation, imageRange2d& range2d) {
+    // translate corners according to the scale factor
+    std::vector<cv::Point2f> corners { 
+            cv::Point2f(0.,0), 
+            cv::Point2f(0.,size2d.height/ size2d.scale),
+            cv::Point2f(size2d.width/ size2d.scale,size2d.height/ size2d.scale),
+            cv::Point2f(size2d.width/ size2d.scale,0.)
+    };
+
+    // apply the transformation to get the warped corners
+    std::vector<cv::Point2f> warpedCorners;
+    cv::perspectiveTransform(corners, warpedCorners, transformation);
+    std::cout << "warpedCorners = " << warpedCorners << std::endl;
+    std::cout << "transformation = " << transformation << std::endl;
+
+    // make sure the warped corners do not go outside of min/max bounds
+    float max_x = 1e9, min_x = -1e9;
+    float max_y = 1e9, min_y = -1e9;
+    float max_x_warp = 0., min_x_warp = 0.;
+    float max_y_warp = 0., min_y_warp = 0.;
+    // ... origin corner
+    min_x_warp = warpedCorners[0].x;
+    min_y_warp = warpedCorners[0].y;
+    if (warpedCorners[0].x < min_x || warpedCorners[0].x > max_x)
+    {
+        min_x_warp = min_x;
     }
+    if (warpedCorners[0].y < min_y || warpedCorners[0].y > max_y)
+    {
+        min_y_warp = min_y;
+    }
+    // ... corner diagonal from the origin corner
+    max_x_warp = warpedCorners[2].x;
+    max_y_warp = warpedCorners[2].y;
+    if (warpedCorners[2].x < min_x || warpedCorners[2].x > max_x)
+    {
+        max_x_warp = max_x;
+    }
+    if (warpedCorners[2].y < min_y || warpedCorners[2].y > max_y)
+    {
+        max_y_warp = max_y;
+    }
+
+    // round floats to appropriate integer value
+    range2d.max_x = static_cast<int>(max_x_warp - 0.5);
+    range2d.min_x = static_cast<int>(min_x_warp + 0.5);
+    range2d.max_y = static_cast<int>(max_y_warp - 0.5);
+    range2d.min_y = static_cast<int>(min_y_warp + 0.5);
+    std::cout << "range2d = " << range2d << std::endl;
 }
 
 cv::Mat warpPerspectiveWithPadding (const cv::Mat& image, cv::Mat& transformation) {
-    int height = image.rows;
-    int width = image.cols;
+    // reduce the individual image size so we have enough room to create the final stitched tapestry 
+    imageSize2d size2d{ static_cast<float>(image.rows), static_cast<float>(image.rows), 2.0 };
+    std::cout << "size2d = " << size2d << std::endl;
     cv::Mat small_img;
-    cv::resize (image, small_img, cv::Size (width/2, height/2));
-    std::vector<cv::Point2f> corners = {cv::Point2f (0,0), cv::Point2f (0,height/2),
-                                   cv::Point2f (width/2,height/2), cv::Point2f (width/2,0)};
-    std::vector<cv::Point2f> warpedCorners;
-    cv::perspectiveTransform (corners, warpedCorners, transformation);
-    float xMin = 1e9, xMax = -1e9;
-    float yMin = 1e9, yMax = -1e9;
-    for (int i = 0; i < 4; i++) {
-        xMin = (xMin > warpedCorners[i].x)? warpedCorners[i].x : xMin;
-        xMax = (xMax < warpedCorners[i].x)? warpedCorners[i].x : xMax;
-        yMin = (yMin > warpedCorners[i].y)? warpedCorners[i].y : yMin;
-        yMax = (yMax < warpedCorners[i].y)? warpedCorners[i].y : yMax;
-    }
-    int xMin_ = (xMin - 0.5);
-    int xMax_ = (xMax + 0.5);
-    int yMin_ = (yMin - 0.5);
-    int yMax_ = (yMax + 0.5);
-    cv::Mat translation = (cv::Mat_<double>(3,3) << 1, 0, -xMin_, 0, 1, -yMin_, 0, 0, 1);
+    cv::resize (image, small_img, cv::Size (size2d.getNewWidth(), size2d.getNewHeight()));
+
+    // get a padded transformation scaled to to our reduced image size
+    cv::Mat padded_transformation;
+    imageRange2d range2d;
+    getScaledPaddedTransformation(transformation, size2d, padded_transformation, range2d);
+    cv::Mat translation = (cv::Mat_<double>(3,3) << 1, 0, range2d.min_x, 0, 1, range2d.min_y, 0, 0, 1);
     cv::Mat fullTransformation = translation * transformation;
-    cv::cuda::GpuMat result;
+
+    // perform the image perspective warp
     cv::cuda::GpuMat gpu_img (small_img);
+    cv::cuda::GpuMat gpu_img_wp;
     cv::cuda::GpuMat gpu_ft (fullTransformation);
-    cv::cuda::warpPerspective (gpu_img, result, fullTransformation,
-                                cv::Size (xMax_-xMin_, yMax_-yMin_));
-    cv::Mat result_ (result.size(), result.type());
-    result.download (result_);
-    return result_;
+    std::cout << "fullTransformation = " << fullTransformation << std::endl;
+    cv::Size gpu_size{ range2d.getWidth(), range2d.getHeight() };
+    std::cout << "gpu_size = " << gpu_size << std::endl;
+    cv::cuda::warpPerspective(gpu_img, gpu_img_wp, fullTransformation, gpu_size);
+
+    // download the final result matrix
+    cv::Mat result (gpu_img_wp.size(), gpu_img_wp.type());
+    gpu_img_wp.download (result);
+    return result;
 }
 
 cv::Mat combinePair (cv::Mat& img1, cv::Mat& img2) {
@@ -171,31 +289,31 @@ cv::Mat combinePair (cv::Mat& img1, cv::Mat& img2) {
         allCorners.push_back (warpedCorners2[i]);
     }
 
-    float xMin = 1e9, xMax = -1e9;
-    float yMin = 1e9, yMax = -1e9;
+    float max_x = 1e9, min_x = -1e9;
+    float max_y = 1e9, min_y = -1e9;
     for (int i = 0; i < 7; i++) {
-        xMin = (xMin > allCorners[i][0])? allCorners[i][0] : xMin;
-        xMax = (xMax < allCorners[i][0])? allCorners[i][0] : xMax;
-        yMin = (yMin > allCorners[i][1])? allCorners[i][1] : yMin;
-        yMax = (yMax < allCorners[i][1])? allCorners[i][1] : yMax;
+        max_x = (max_x > allCorners[i][0])? allCorners[i][0] : max_x;
+        min_x = (min_x < allCorners[i][0])? allCorners[i][0] : min_x;
+        max_y = (max_y > allCorners[i][1])? allCorners[i][1] : max_y;
+        min_y = (min_y < allCorners[i][1])? allCorners[i][1] : min_y;
     }
-    int xMin_ = (xMin - 0.5);
-    int xMax_ = (xMax + 0.5);
-    int yMin_ = (yMin - 0.5);
-    int yMax_ = (yMax + 0.5);
+    int max_x_ = (max_x - 0.5);
+    int min_x_ = (min_x + 0.5);
+    int max_y_ = (max_y - 0.5);
+    int min_y_ = (min_y + 0.5);
 
-    cv::Mat translation = (cv::Mat_<double>(3,3) << 1, 0, -xMin_, 0, 1, -yMin_, 0, 0, 1);
+    cv::Mat translation = (cv::Mat_<double>(3,3) << 1, 0, -max_x_, 0, 1, -max_y_, 0, 0, 1);
 
     cv::cuda::GpuMat warpedResImg;
     cv::cuda::warpPerspective (img1_gpu, warpedResImg, translation,
-                               cv::Size (xMax_-xMin_, yMax_-yMin_));
+                               cv::Size (min_x_-max_x_, min_y_-max_y_));
 
     cv::cuda::GpuMat warpedImageTemp;
     cv::cuda::warpPerspective (img2_gpu, warpedImageTemp, translation,
-                                cv::Size (xMax_ - xMin_, yMax_ - yMin_));
+                                cv::Size (min_x_ - max_x_, min_y_ - max_y_));
     cv::cuda::GpuMat warpedImage2;
     cv::cuda::warpAffine (warpedImageTemp, warpedImage2, A,
-                          cv::Size (xMax_ - xMin_, yMax_ - yMin_));
+                          cv::Size (min_x_ - max_x_, min_y_ - max_y_));
 
     cv::cuda::GpuMat mask;
     cv::cuda::threshold (warpedImage2, mask, 1, 255, cv::THRESH_BINARY);
@@ -297,7 +415,10 @@ void changePerspective(std::vector<cv::Mat>& imageList,
     std::cout << "Warping Images Now" << std::endl;
     int n = imageList.size();
     for (int i = 0; i < n; i++) {
-        cv::Mat M = computeUnRotMatrix(dataMatrix[i]);
+        // get a transformation to the origin plane
+        // to unwind any rotations done to the camera before the image was taken
+        cv::Mat M;
+        getTransformationToOriginPlane(dataMatrix[i], M);
         cv::Mat correctedImage = warpPerspectiveWithPadding(imageList[i], M);
         cv::imwrite("../../output/temp/" + dataMatrix[i].imageName, correctedImage);
     }
