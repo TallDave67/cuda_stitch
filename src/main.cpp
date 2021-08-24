@@ -219,8 +219,10 @@ cv::Mat warpPerspectiveWithPadding (const cv::Mat& image, cv::Mat& transformatio
     return result;
 }
 
-cv::Mat combinePair (cv::Mat& img1, cv::Mat& img2) {
-    cv::cuda::GpuMat img1_gpu (img1), img2_gpu (img2);
+void getKeypoints(  cv::cuda::GpuMat & img1_gpu, cv::cuda::GpuMat & img2_gpu, 
+                    cv::cuda::GpuMat & descriptors1_gpu, cv::cuda::GpuMat & descriptors2_gpu,
+                    std::vector<cv::KeyPoint> & keypoints1, std::vector<cv::KeyPoint> & keypoints2)
+{
     cv::cuda::GpuMat img1_gray_gpu, img2_gray_gpu;
 
     cv::cuda::cvtColor (img1_gpu, img1_gray_gpu, cv::COLOR_BGR2GRAY);
@@ -234,20 +236,22 @@ cv::Mat combinePair (cv::Mat& img1, cv::Mat& img2) {
 
     cv::cuda::SURF_CUDA detector;
 
-    cv::cuda::GpuMat keypoints1_gpu, descriptors1_gpu;
+    cv::cuda::GpuMat keypoints1_gpu;
     detector (img1_gray_gpu, mask1, keypoints1_gpu, descriptors1_gpu);
-    
-    std::vector<cv::KeyPoint> keypoints1;
     detector.downloadKeypoints (keypoints1_gpu, keypoints1);
 
-    cv::cuda::GpuMat keypoints2_gpu, descriptors2_gpu;
+    cv::cuda::GpuMat keypoints2_gpu;
     detector(img2_gray_gpu, mask2, keypoints2_gpu, descriptors2_gpu);
-    
-    std::vector<cv::KeyPoint> keypoints2;
     detector.downloadKeypoints (keypoints2_gpu, keypoints2);
+}
+
+cv::Mat combinePair (cv::Mat& img1, cv::Mat& img2) {
+    cv::cuda::GpuMat img1_gpu (img1), img2_gpu (img2);
+    cv::cuda::GpuMat descriptors1_gpu, descriptors2_gpu;
+    std::vector<cv::KeyPoint> keypoints1, keypoints2;
+    getKeypoints(img1_gpu, img2_gpu, descriptors1_gpu, descriptors2_gpu, keypoints1, keypoints2);
 
     cv::Ptr<cv::cuda::DescriptorMatcher> matcher = cv::cuda::DescriptorMatcher::createBFMatcher ();
-
     std::vector<std::vector<cv::DMatch>> knn_matches;
     matcher->knnMatch (descriptors2_gpu, descriptors1_gpu, knn_matches, 2);
 
