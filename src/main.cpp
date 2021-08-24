@@ -219,7 +219,8 @@ cv::Mat warpPerspectiveWithPadding (const cv::Mat& image, cv::Mat& transformatio
     return result;
 }
 
-void getKeypoints(  cv::cuda::GpuMat & img_gpu, 
+void getKeypoints(  cv::cuda::SURF_CUDA & detector,
+                    cv::cuda::GpuMat & img_gpu, 
                     cv::cuda::GpuMat & descriptors_gpu,
                     std::vector<cv::KeyPoint> & keypoints)
 {
@@ -228,7 +229,6 @@ void getKeypoints(  cv::cuda::GpuMat & img_gpu,
     cv::cuda::GpuMat mask;
     cv::cuda::threshold (img_gray_gpu, mask, 1, 255, cv::THRESH_BINARY);
 
-    cv::cuda::SURF_CUDA detector;
     cv::cuda::GpuMat keypoints1_gpu;
     detector (img_gray_gpu, mask, keypoints1_gpu, descriptors_gpu);
     detector.downloadKeypoints (keypoints1_gpu, keypoints);
@@ -256,22 +256,11 @@ void matchKeypointDescriptors(  cv::cuda::GpuMat & descriptors1_gpu, cv::cuda::G
     }
 }
 
-cv::Mat combinePair (cv::Mat& img1, cv::Mat& img2) {
-    cv::cuda::GpuMat img1_gpu (img1), img2_gpu (img2);
-
-    // get keypoint descriptors for the two images
-    cv::cuda::GpuMat descriptors1_gpu, descriptors2_gpu;
-    std::vector<cv::KeyPoint> keypoints1, keypoints2;
-    getKeypoints(img1_gpu, descriptors1_gpu, keypoints1);
-    getKeypoints(img2_gpu, descriptors2_gpu, keypoints2);
-
-    // match the keypoint descriptors
-    std::vector<cv::Point2f> src_pts, dst_pts;
-    matchKeypointDescriptors(descriptors1_gpu, descriptors2_gpu, keypoints1, keypoints2, src_pts, dst_pts);
-
-    cv::Mat A = cv::estimateRigidTransform(src_pts, dst_pts, false);
-    float height1 = static_cast<float>(img1.rows), width1 = static_cast<float>(img1.cols);
-    float height2 = static_cast<float>(img2.rows), width2 = static_cast<float>(img2.cols);
+void getAffineTransformation(  float height1, float width1, float height2, float width2, 
+                               std::vector<cv::Point2f> & src_pts, std::vector<cv::Point2f> & dst_pts, 
+                               cv::Mat & A, imageRange2d& range2d)
+{
+    A = cv::estimateRigidTransform(src_pts, dst_pts, false);
 
     std::vector<cv::Point2f> corners1{
             cv::Point2f(0.,0.),
@@ -306,8 +295,29 @@ cv::Mat combinePair (cv::Mat& img1, cv::Mat& img2) {
     allCorners.push_back(warpedCorners2);
 
     //get x & y ranges for the warped corners that do not go outside of min/max bounds
-    imageRange2d range2d;
     getBoundedRangesFromCorners(allCorners, range2d);
+}
+
+cv::Mat combinePair (cv::Mat& img1, cv::Mat& img2) {
+    cv::cuda::GpuMat img1_gpu (img1), img2_gpu (img2);
+
+    // get keypoint descriptors for the two images
+    cv::cuda::SURF_CUDA detector;
+    cv::cuda::GpuMat descriptors1_gpu, descriptors2_gpu;
+    std::vector<cv::KeyPoint> keypoints1, keypoints2;
+    getKeypoints(detector, img1_gpu, descriptors1_gpu, keypoints1);
+    getKeypoints(detector, img2_gpu, descriptors2_gpu, keypoints2);
+
+    // match the keypoint descriptors
+    std::vector<cv::Point2f> src_pts, dst_pts;
+    matchKeypointDescriptors(descriptors1_gpu, descriptors2_gpu, keypoints1, keypoints2, src_pts, dst_pts);
+
+    // get affine transformation from our src pts (image 2) to our dst pts (image 1)
+    float height1 = static_cast<float>(img1.rows), width1 = static_cast<float>(img1.cols);
+    float height2 = static_cast<float>(img2.rows), width2 = static_cast<float>(img2.cols);
+    cv::Mat A;
+    imageRange2d range2d;
+    getAffineTransformation(height1, width1, height2, width2, src_pts, dst_pts, A, range2d);
     std::cout << "range2d.width=" << range2d.getWidth() << ", range2d.height=" << range2d.getHeight() << std::endl;
 
     cv::Mat translation = (cv::Mat_<double>(3,3) << 1, 0, -range2d.min_x, 0, 1, -range2d.min_y, 0, 0, 1);
