@@ -166,7 +166,6 @@ void getBoundedRangesFromCorners(std::vector <std::vector<cv::Point2f>>& rectang
     range2d.min_y = static_cast<int>(min_y - 0.5);
     range2d.max_y = static_cast<int>(max_y + 0.5);
     std::cout << "getBoundedRangesFromCorners: range2d = " << range2d << std::endl;
-
 }
 
 void getScaledPaddedTransformation(cv::Mat& transformation, imageSize2d& size2d, cv::Mat& padded_transformation, imageRange2d& range2d) {
@@ -221,8 +220,6 @@ cv::Mat warpPerspectiveWithPadding (const cv::Mat& image, cv::Mat& transformatio
 }
 
 cv::Mat combinePair (cv::Mat& img1, cv::Mat& img2) {
-    std::cout << "combinePair: start" << std::endl;
-
     cv::cuda::GpuMat img1_gpu (img1), img2_gpu (img2);
     cv::cuda::GpuMat img1_gray_gpu, img2_gray_gpu;
 
@@ -235,7 +232,6 @@ cv::Mat combinePair (cv::Mat& img1, cv::Mat& img2) {
     cv::cuda::threshold (img1_gray_gpu, mask1, 1, 255, cv::THRESH_BINARY);
     cv::cuda::threshold (img2_gray_gpu, mask2, 1, 255, cv::THRESH_BINARY);
 
-    std::cout << "detect keypoints" << std::endl;
     cv::cuda::SURF_CUDA detector;
 
     cv::cuda::GpuMat keypoints1_gpu, descriptors1_gpu;
@@ -250,7 +246,6 @@ cv::Mat combinePair (cv::Mat& img1, cv::Mat& img2) {
     std::vector<cv::KeyPoint> keypoints2;
     detector.downloadKeypoints (keypoints2_gpu, keypoints2);
 
-    std::cout << "do matching" << std::endl;
     cv::Ptr<cv::cuda::DescriptorMatcher> matcher = cv::cuda::DescriptorMatcher::createBFMatcher ();
 
     std::vector<std::vector<cv::DMatch>> knn_matches;
@@ -271,57 +266,57 @@ cv::Mat combinePair (cv::Mat& img1, cv::Mat& img2) {
         dst_pts.push_back (keypoints1[m.trainIdx].pt);
     }
 
-    std::cout << "estimate rigid transform" << std::endl;
     cv::Mat A = cv::estimateRigidTransform(src_pts, dst_pts, false);
     float height1 = static_cast<float>(img1.rows), width1 = static_cast<float>(img1.cols);
     float height2 = static_cast<float>(img2.rows), width2 = static_cast<float>(img2.cols);
 
-    std::cout << "compute corners" << std::endl;
-    std::vector<std::vector<float>> corners1 {{0,0},{0,height1},{width1,height1},{width1,0}};
-    std::vector<std::vector<float>> corners2 {{0,0},{0,height2},{width2,height2},{width2,0}};
+    std::vector<cv::Point2f> corners1{
+            cv::Point2f(0.,0.),
+            cv::Point2f(0.,height1),
+            cv::Point2f(width1,height1),
+            cv::Point2f(width1,0.)
+    };
 
-    std::vector<std::vector<float>> warpedCorners2 (4, std::vector<float>(2));
-    std::vector<std::vector<float>> allCorners = corners1;
+    std::vector<cv::Point2f> corners2{
+            cv::Point2f(0.,0.),
+            cv::Point2f(0.,height2),
+            cv::Point2f(width2,height2),
+            cv::Point2f(width2,0.)
+    };
+
+    std::vector<cv::Point2f> warpedCorners2{
+            cv::Point2f(0.,0.),
+            cv::Point2f(0.,0.),
+            cv::Point2f(0.,0.),
+            cv::Point2f(0.,0.)
+    };
+
+    std::vector<std::vector<cv::Point2f>> allCorners;
+    allCorners.push_back(corners1);
 
     for (int i = 0; i < 4; i++) {
-        float cornerX = corners2[i][0];
-        float cornerY = corners2[i][1];
-        warpedCorners2[i][0] = A.at<double> (0,0) * cornerX +
-                            A.at<double> (0,1) * cornerY + A.at<double> (0,2);
-        warpedCorners2[i][1] = A.at<double> (1,0) * cornerX +
-                            A.at<double> (1,1) * cornerY + A.at<double> (1,2);
-        allCorners.push_back (warpedCorners2[i]);
+        float cornerX = corners2[i].x;
+        float cornerY = corners2[i].y;
+        warpedCorners2[i].x = A.at<double> (0,0) * cornerX + A.at<double> (0,1) * cornerY + A.at<double> (0,2);
+        warpedCorners2[i].y = A.at<double> (1,0) * cornerX + A.at<double> (1,1) * cornerY + A.at<double> (1,2);
     }
+    allCorners.push_back(warpedCorners2);
 
-    float max_x = 1e9, min_x = -1e9;
-    float max_y = 1e9, min_y = -1e9;
-    for (int i = 0; i < 7; i++) {
-        max_x = (max_x > allCorners[i][0])? allCorners[i][0] : max_x;
-        min_x = (min_x < allCorners[i][0])? allCorners[i][0] : min_x;
-        max_y = (max_y > allCorners[i][1])? allCorners[i][1] : max_y;
-        min_y = (min_y < allCorners[i][1])? allCorners[i][1] : min_y;
-    }
-    int max_x_ = (max_x - 0.5);
-    int min_x_ = (min_x + 0.5);
-    int max_y_ = (max_y - 0.5);
-    int min_y_ = (min_y + 0.5);
-    std::cout << "allCorners = ";
-    for (auto& c : allCorners) std::cout << "(" << c[0] << "," << c[1] << ") ";
-    std::cout << std::endl;
-    std::cout << "max_x_ = " << max_x_ << ", min_x_ = " << min_x_ << ", max_y_ = " << max_y_ << ", min_y_ = " << min_y_ << std::endl;
+    //get x & y ranges for the warped corners that do not go outside of min/max bounds
+    imageRange2d range2d;
+    getBoundedRangesFromCorners(allCorners, range2d);
+    std::cout << "range2d.width=" << range2d.getWidth() << ", range2d.height=" << range2d.getHeight() << std::endl;
 
-    cv::Mat translation = (cv::Mat_<double>(3,3) << 1, 0, -max_x_, 0, 1, -max_y_, 0, 0, 1);
+    cv::Mat translation = (cv::Mat_<double>(3,3) << 1, 0, -range2d.min_x, 0, 1, -range2d.min_y, 0, 0, 1);
 
     cv::cuda::GpuMat warpedResImg;
-    cv::cuda::warpPerspective (img1_gpu, warpedResImg, translation,
-                               cv::Size (min_x_-max_x_, min_y_-max_y_));
+    cv::cuda::warpPerspective (img1_gpu, warpedResImg, translation, cv::Size (range2d.getWidth(), range2d.getHeight()));
 
     cv::cuda::GpuMat warpedImageTemp;
-    cv::cuda::warpPerspective (img2_gpu, warpedImageTemp, translation,
-                                cv::Size (min_x_ - max_x_, min_y_ - max_y_));
+    cv::cuda::warpPerspective (img2_gpu, warpedImageTemp, translation, cv::Size (range2d.getWidth(), range2d.getHeight()));
+
     cv::cuda::GpuMat warpedImage2;
-    cv::cuda::warpAffine (warpedImageTemp, warpedImage2, A,
-                          cv::Size (min_x_ - max_x_, min_y_ - max_y_));
+    cv::cuda::warpAffine (warpedImageTemp, warpedImage2, A, cv::Size (range2d.getWidth(), range2d.getHeight()));
 
     cv::cuda::GpuMat mask;
     cv::cuda::threshold (warpedImage2, mask, 1, 255, cv::THRESH_BINARY);
@@ -344,7 +339,6 @@ cv::Mat combinePair (cv::Mat& img1, cv::Mat& img2) {
 
     cv::Mat ret;
     dst.download (ret);
-    std::cout << "combinePair: end" << std::endl;
     return ret;
 }
 
