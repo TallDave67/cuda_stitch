@@ -234,13 +234,10 @@ void getKeypoints(  cv::cuda::GpuMat & img_gpu,
     detector.downloadKeypoints (keypoints1_gpu, keypoints);
 }
 
-cv::Mat combinePair (cv::Mat& img1, cv::Mat& img2) {
-    cv::cuda::GpuMat img1_gpu (img1), img2_gpu (img2);
-    cv::cuda::GpuMat descriptors1_gpu, descriptors2_gpu;
-    std::vector<cv::KeyPoint> keypoints1, keypoints2;
-    getKeypoints(img1_gpu, descriptors1_gpu, keypoints1);
-    getKeypoints(img2_gpu, descriptors2_gpu, keypoints2);
-
+void matchKeypointDescriptors(  cv::cuda::GpuMat & descriptors1_gpu, cv::cuda::GpuMat & descriptors2_gpu, 
+                                std::vector<cv::KeyPoint> & keypoints1, std::vector<cv::KeyPoint> & keypoints2,
+                                std::vector<cv::Point2f> & src_pts, std::vector<cv::Point2f> & dst_pts)
+{
     cv::Ptr<cv::cuda::DescriptorMatcher> matcher = cv::cuda::DescriptorMatcher::createBFMatcher ();
     std::vector<std::vector<cv::DMatch>> knn_matches;
     matcher->knnMatch (descriptors2_gpu, descriptors1_gpu, knn_matches, 2);
@@ -253,12 +250,24 @@ cv::Mat combinePair (cv::Mat& img1, cv::Mat& img2) {
         }
     }
 
-    std::vector<cv::Point2f> src_pts;
-    std::vector<cv::Point2f> dst_pts;
     for (auto m : matches) {
         src_pts.push_back (keypoints2[m.queryIdx].pt);
         dst_pts.push_back (keypoints1[m.trainIdx].pt);
     }
+}
+
+cv::Mat combinePair (cv::Mat& img1, cv::Mat& img2) {
+    cv::cuda::GpuMat img1_gpu (img1), img2_gpu (img2);
+
+    // get keypoint descriptors for the two images
+    cv::cuda::GpuMat descriptors1_gpu, descriptors2_gpu;
+    std::vector<cv::KeyPoint> keypoints1, keypoints2;
+    getKeypoints(img1_gpu, descriptors1_gpu, keypoints1);
+    getKeypoints(img2_gpu, descriptors2_gpu, keypoints2);
+
+    // match the keypoint descriptors
+    std::vector<cv::Point2f> src_pts, dst_pts;
+    matchKeypointDescriptors(descriptors1_gpu, descriptors2_gpu, keypoints1, keypoints2, src_pts, dst_pts);
 
     cv::Mat A = cv::estimateRigidTransform(src_pts, dst_pts, false);
     float height1 = static_cast<float>(img1.rows), width1 = static_cast<float>(img1.cols);
