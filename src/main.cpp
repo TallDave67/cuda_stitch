@@ -140,62 +140,32 @@ void getTransformationToOriginPlane (imageData& pose, cv::Mat& transformation) {
                                                InvR(2,0), InvR(2,1), InvR(2,2));
 }
 
-void getBoundedRangesFromCorners(std::vector <std::vector<cv::Point2f>>& corners_collection, imageRange2d& range2d) {
+void getBoundedRangesFromCorners(std::vector <std::vector<cv::Point2f>>& rectangles, imageRange2d& range2d) {
     // match the ranges to just include all the corners of all the rectangles in the collection
     // but decrease the ranges if any go outside min/max bounds
-    float max_x = 1e9, min_x = -1e9;
-    float max_y = 1e9, min_y = -1e9;
-    float max_x_warp = 0., min_x_warp = 0.;
-    float max_y_warp = 0., min_y_warp = 0.;
+
+    // mmin & max values start out in opposite postions
+    // and are iteratively pushed in the other direction
+    float min_x = 1e9, max_x = -1e9;
+    float min_y = 1e9, max_y = -1e9;
 
     // do the loop
-    bool seeded_min = false;
-    bool seeded_max = false;
-    for (auto & rect : corners_collection) {
-        // min is seeded?
-        if (!seeded_min)
-        {
-            min_x_warp = rect[0].x;
-            min_y_warp = rect[0].y;
-            seeded_min = true;
-        }
-
-        // origin corner tells us the min
-        if (rect[0].x < min_x || rect[0].x > max_x)
-        {
-            min_x_warp = min_x;
-        }
-        if (rect[0].y < min_y || rect[0].y > max_y)
-        {
-            min_y_warp = min_y;
-        }
-
-
-        // max is seeded?
-        if (!seeded_max)
-        {
-            max_x_warp = rect[2].x;
-            max_y_warp = rect[2].y;
-            seeded_max = true;
-        }
-
-        // corner diagonal from the origin corner tells us the max
-        if (rect[2].x < min_x || rect[2].x > max_x)
-        {
-            max_x_warp = max_x;
-        }
-        if (rect[2].y < min_y || rect[2].y > max_y)
-        {
-            max_y_warp = max_y;
+    for (auto & rect : rectangles) {
+        std::cout << "rect = " << rect << std::endl;
+        for (auto & corner : rect) {
+            min_x = (min_x > corner.x)? corner.x : min_x;
+            max_x = (max_x < corner.x)? corner.x : max_x;
+            min_y = (min_y > corner.y)? corner.y : min_y;
+            max_y = (max_y < corner.y)? corner.y : max_y;
         }
     }
 
     // round floats to appropriate integer value
-    range2d.max_x = static_cast<int>(max_x_warp - 0.5);
-    range2d.min_x = static_cast<int>(min_x_warp + 0.5);
-    range2d.max_y = static_cast<int>(max_y_warp - 0.5);
-    range2d.min_y = static_cast<int>(min_y_warp + 0.5);
-    //std::cout << "getBoundedRangesFromCorners: range2d = " << range2d << std::endl;
+    range2d.min_x = static_cast<int>(min_x - 0.5);
+    range2d.max_x = static_cast<int>(max_x + 0.5);
+    range2d.min_y = static_cast<int>(min_y - 0.5);
+    range2d.max_y = static_cast<int>(max_y + 0.5);
+    std::cout << "getBoundedRangesFromCorners: range2d = " << range2d << std::endl;
 
 }
 
@@ -207,6 +177,7 @@ void getScaledPaddedTransformation(cv::Mat& transformation, imageSize2d& size2d,
             cv::Point2f(size2d.width/ size2d.scale,size2d.height/ size2d.scale),
             cv::Point2f(size2d.width/ size2d.scale,0.)
     };
+    std::cout << "corners = " << corners << std::endl;
 
     // apply the transformation to get the warped corners
     std::vector<cv::Point2f> warpedCorners;
@@ -215,15 +186,15 @@ void getScaledPaddedTransformation(cv::Mat& transformation, imageSize2d& size2d,
     //std::cout << "transformation = " << transformation << std::endl;
 
     //get x & y ranges for the warped corners that do not go outside of min/max bounds
-    std::vector <std::vector<cv::Point2f>> corners_collection;
-    corners_collection.push_back(warpedCorners);
-    getBoundedRangesFromCorners(corners_collection, range2d);
+    std::vector <std::vector<cv::Point2f>> rectangles;
+    rectangles.push_back(warpedCorners);
+    getBoundedRangesFromCorners(rectangles, range2d);
 }
 
 cv::Mat warpPerspectiveWithPadding (const cv::Mat& image, cv::Mat& transformation) {
     // reduce the individual image size so we have enough room to create the final stitched tapestry 
-    imageSize2d size2d{ static_cast<float>(image.rows), static_cast<float>(image.rows), 2.0 };
-    //std::cout << "size2d = " << size2d << std::endl;
+    imageSize2d size2d{ static_cast<float>(image.cols), static_cast<float>(image.rows), 2.0 };
+    std::cout << "size2d = " << size2d << std::endl;
     cv::Mat small_img;
     cv::resize (image, small_img, cv::Size (size2d.getNewWidth(), size2d.getNewHeight()));
 
@@ -231,7 +202,7 @@ cv::Mat warpPerspectiveWithPadding (const cv::Mat& image, cv::Mat& transformatio
     cv::Mat padded_transformation;
     imageRange2d range2d;
     getScaledPaddedTransformation(transformation, size2d, padded_transformation, range2d);
-    cv::Mat translation = (cv::Mat_<double>(3,3) << 1, 0, range2d.min_x, 0, 1, range2d.min_y, 0, 0, 1);
+    cv::Mat translation = (cv::Mat_<double>(3,3) << 1, 0, -range2d.min_x, 0, 1, -range2d.min_y, 0, 0, 1);
     cv::Mat fullTransformation = translation * transformation;
 
     // perform the image perspective warp
@@ -334,6 +305,10 @@ cv::Mat combinePair (cv::Mat& img1, cv::Mat& img2) {
     int min_x_ = (min_x + 0.5);
     int max_y_ = (max_y - 0.5);
     int min_y_ = (min_y + 0.5);
+    std::cout << "allCorners = ";
+    for (auto& c : allCorners) std::cout << "(" << c[0] << "," << c[1] << ") ";
+    std::cout << std::endl;
+    std::cout << "max_x_ = " << max_x_ << ", min_x_ = " << min_x_ << ", max_y_ = " << max_y_ << ", min_y_ = " << min_y_ << std::endl;
 
     cv::Mat translation = (cv::Mat_<double>(3,3) << 1, 0, -max_x_, 0, 1, -max_y_, 0, 0, 1);
 
