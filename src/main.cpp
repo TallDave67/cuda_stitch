@@ -357,8 +357,7 @@ cv::Mat combinePair (cv::Mat& img1, cv::Mat& img2) {
     printGpuMatReport(warpedPerspectiveImg2_gpu, "warpedPerspectiveImg2_gpu");
 
     // affinely warp image 2 so that
-    // it is sized and positioned correctly
-    // in relation to image 1
+    // it is positioned correctly in relation to image 1
     cv::cuda::GpuMat warpedPerspectiveAffineImg2_gpu;
     cv::cuda::warpAffine (warpedPerspectiveImg2_gpu, warpedPerspectiveAffineImg2_gpu, A, cv::Size (range2d.getWidth(), range2d.getHeight()));
     printGpuMatReport(warpedPerspectiveAffineImg2_gpu, "warpedPerspectiveAffineImg2_gpu");
