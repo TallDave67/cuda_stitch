@@ -226,11 +226,11 @@ void getKeypoints(  cv::cuda::SURF_CUDA & detector,
 {
     cv::cuda::GpuMat img_gray_gpu;
     cv::cuda::cvtColor (img_gpu, img_gray_gpu, cv::COLOR_BGR2GRAY);
-    cv::cuda::GpuMat mask;
-    cv::cuda::threshold (img_gray_gpu, mask, 1, 255, cv::THRESH_BINARY);
+    cv::cuda::GpuMat mask_gpu;
+    cv::cuda::threshold (img_gray_gpu, mask_gpu, 1, 255, cv::THRESH_BINARY);
 
     cv::cuda::GpuMat keypoints1_gpu;
-    detector (img_gray_gpu, mask, keypoints1_gpu, descriptors_gpu);
+    detector (img_gray_gpu, mask_gpu, keypoints1_gpu, descriptors_gpu);
     detector.downloadKeypoints (keypoints1_gpu, keypoints);
 }
 
@@ -322,32 +322,32 @@ cv::Mat combinePair (cv::Mat& img1, cv::Mat& img2) {
 
     cv::Mat translation = (cv::Mat_<double>(3,3) << 1, 0, -range2d.min_x, 0, 1, -range2d.min_y, 0, 0, 1);
 
-    cv::cuda::GpuMat warpedResImg;
-    cv::cuda::warpPerspective (img1_gpu, warpedResImg, translation, cv::Size (range2d.getWidth(), range2d.getHeight()));
+    cv::cuda::GpuMat warpedPerspectiveImg1;
+    cv::cuda::warpPerspective (img1_gpu, warpedPerspectiveImg1, translation, cv::Size (range2d.getWidth(), range2d.getHeight()));
 
-    cv::cuda::GpuMat warpedImageTemp;
-    cv::cuda::warpPerspective (img2_gpu, warpedImageTemp, translation, cv::Size (range2d.getWidth(), range2d.getHeight()));
+    cv::cuda::GpuMat warpedPerspectiveImg2;
+    cv::cuda::warpPerspective (img2_gpu, warpedPerspectiveImg2, translation, cv::Size (range2d.getWidth(), range2d.getHeight()));
 
-    cv::cuda::GpuMat warpedImage2;
-    cv::cuda::warpAffine (warpedImageTemp, warpedImage2, A, cv::Size (range2d.getWidth(), range2d.getHeight()));
+    cv::cuda::GpuMat warpedPerspectiveAffineImg2;
+    cv::cuda::warpAffine (warpedPerspectiveImg2, warpedPerspectiveAffineImg2, A, cv::Size (range2d.getWidth(), range2d.getHeight()));
 
-    cv::cuda::GpuMat mask;
-    cv::cuda::threshold (warpedImage2, mask, 1, 255, cv::THRESH_BINARY);
-    int type = warpedResImg.type();
+    cv::cuda::GpuMat mask_gpu;
+    cv::cuda::threshold (warpedPerspectiveAffineImg2, mask_gpu, 1, 255, cv::THRESH_BINARY);
+    int type = warpedPerspectiveImg1.type();
 
-    warpedResImg.convertTo (warpedResImg, CV_32FC3);
-    warpedImage2.convertTo (warpedImage2, CV_32FC3);
-    mask.convertTo (mask, CV_32FC3, 1.0/255);
-    cv::Mat mask_;
-    mask.download (mask_);
+    warpedPerspectiveImg1.convertTo (warpedPerspectiveImg1, CV_32FC3);
+    warpedPerspectiveAffineImg2.convertTo (warpedPerspectiveAffineImg2, CV_32FC3);
+    mask_gpu.convertTo (mask_gpu, CV_32FC3, 1.0/255);
+    cv::Mat mask;
+    mask_gpu.download (mask);
 
-    cv::cuda::GpuMat dst (warpedImage2.size(), warpedImage2.type());
-    cv::cuda::multiply (mask, warpedImage2, warpedImage2);
+    cv::cuda::GpuMat dst (warpedPerspectiveAffineImg2.size(), warpedPerspectiveAffineImg2.type());
+    cv::cuda::multiply (mask_gpu, warpedPerspectiveAffineImg2, warpedPerspectiveAffineImg2);
 
-    cv::Mat diff_ = cv::Scalar::all (1.0) - mask_;
-    cv::cuda::GpuMat diff (diff_);
-    cv::cuda::multiply(diff, warpedResImg, warpedResImg);
-    cv::cuda::add (warpedResImg, warpedImage2, dst);
+    cv::Mat diff = cv::Scalar::all (1.0) - mask;
+    cv::cuda::GpuMat diff_gpu (diff);
+    cv::cuda::multiply(diff_gpu, warpedPerspectiveImg1, warpedPerspectiveImg1);
+    cv::cuda::add (warpedPerspectiveImg1, warpedPerspectiveAffineImg2, dst);
     dst.convertTo (dst, type);
 
     cv::Mat ret;
