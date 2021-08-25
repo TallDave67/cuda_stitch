@@ -151,7 +151,7 @@ void getBoundedRangesFromCorners(std::vector <std::vector<cv::Point2f>>& rectang
 
     // do the loop
     for (auto & rect : rectangles) {
-        std::cout << "rect = " << rect << std::endl;
+        //std::cout << "rect = " << rect << std::endl;
         for (auto & corner : rect) {
             min_x = (min_x > corner.x)? corner.x : min_x;
             max_x = (max_x < corner.x)? corner.x : max_x;
@@ -165,7 +165,7 @@ void getBoundedRangesFromCorners(std::vector <std::vector<cv::Point2f>>& rectang
     range2d.max_x = static_cast<int>(max_x + 0.5);
     range2d.min_y = static_cast<int>(min_y - 0.5);
     range2d.max_y = static_cast<int>(max_y + 0.5);
-    std::cout << "getBoundedRangesFromCorners: range2d = " << range2d << std::endl;
+    //std::cout << "getBoundedRangesFromCorners: range2d = " << range2d << std::endl;
 }
 
 void getScaledPaddedTransformation(cv::Mat& transformation, imageSize2d& size2d, cv::Mat& padded_transformation, imageRange2d& range2d) {
@@ -176,7 +176,7 @@ void getScaledPaddedTransformation(cv::Mat& transformation, imageSize2d& size2d,
             cv::Point2f(size2d.width/ size2d.scale,size2d.height/ size2d.scale),
             cv::Point2f(size2d.width/ size2d.scale,0.)
     };
-    std::cout << "corners = " << corners << std::endl;
+    //std::cout << "corners = " << corners << std::endl;
 
     // apply the transformation to get the warped corners
     std::vector<cv::Point2f> warpedCorners;
@@ -193,7 +193,7 @@ void getScaledPaddedTransformation(cv::Mat& transformation, imageSize2d& size2d,
 cv::Mat warpPerspectiveWithPadding (const cv::Mat& image, cv::Mat& transformation) {
     // reduce the individual image size so we have enough room to create the final stitched tapestry 
     imageSize2d size2d{ static_cast<float>(image.cols), static_cast<float>(image.rows), 2.0 };
-    std::cout << "size2d = " << size2d << std::endl;
+    //std::cout << "size2d = " << size2d << std::endl;
     cv::Mat small_img;
     cv::resize (image, small_img, cv::Size (size2d.getNewWidth(), size2d.getNewHeight()));
 
@@ -298,6 +298,27 @@ void getAffineTransformation(  float height1, float width1, float height2, float
     getBoundedRangesFromCorners(allCorners, range2d);
 }
 
+void printGpuMatReport(cv::cuda::GpuMat & mat_gpu, const char * name)
+{
+    std::cout << ">>> matrix = " << name << std::endl;
+    
+    // convert from gpu matrix
+    cv::Mat mat;
+    mat_gpu.download (mat);
+
+    // change to grayscale
+    //cv::cvtColor(mat, mat, cv::COLOR_BGR2GRAY);
+    //int type = mat.type();
+    //int cn = CV_MAT_CN(type);
+    //std::cout << "    type = " << type << ", cn = " << cn << std::endl;
+
+    // dimensions
+    std::cout << "    width = " << mat.cols << ", height = " << mat.rows << std::endl;
+
+    // number of non-zero elements
+    //std::cout << "    num non-zero elements = " << cv::countNonZero(mat)  << std::endl;
+}
+
 cv::Mat combinePair (cv::Mat& img1, cv::Mat& img2) {
     cv::cuda::GpuMat img1_gpu (img1), img2_gpu (img2);
 
@@ -318,36 +339,47 @@ cv::Mat combinePair (cv::Mat& img1, cv::Mat& img2) {
     cv::Mat A;
     imageRange2d range2d;
     getAffineTransformation(height1, width1, height2, width2, src_pts, dst_pts, A, range2d);
-    std::cout << "range2d.width=" << range2d.getWidth() << ", range2d.height=" << range2d.getHeight() << std::endl;
-
+    std::cout << "range2d(" << range2d.getWidth() << "," << range2d.getHeight() << ")" << std::endl;
     cv::Mat translation = (cv::Mat_<double>(3,3) << 1, 0, -range2d.min_x, 0, 1, -range2d.min_y, 0, 0, 1);
 
-    cv::cuda::GpuMat warpedPerspectiveImg1;
-    cv::cuda::warpPerspective (img1_gpu, warpedPerspectiveImg1, translation, cv::Size (range2d.getWidth(), range2d.getHeight()));
+    // homographically warp each image so that
+    // it is sized the same as the bounding rectangle
+    // who was sized to exactly accomodate
+    // the 4 corners of both of the images
+    cv::cuda::GpuMat warpedPerspectiveImg1_gpu;
+    cv::cuda::warpPerspective (img1_gpu, warpedPerspectiveImg1_gpu, translation, cv::Size (range2d.getWidth(), range2d.getHeight()));
+    printGpuMatReport(img1_gpu, "img1_gpu");
+    printGpuMatReport(warpedPerspectiveImg1_gpu, "warpedPerspectiveImg1_gpu");
+    //
+    cv::cuda::GpuMat warpedPerspectiveImg2_gpu;
+    cv::cuda::warpPerspective (img2_gpu, warpedPerspectiveImg2_gpu, translation, cv::Size (range2d.getWidth(), range2d.getHeight()));
+    printGpuMatReport(img2_gpu, "img2_gpu");
+    printGpuMatReport(warpedPerspectiveImg2_gpu, "warpedPerspectiveImg2_gpu");
 
-    cv::cuda::GpuMat warpedPerspectiveImg2;
-    cv::cuda::warpPerspective (img2_gpu, warpedPerspectiveImg2, translation, cv::Size (range2d.getWidth(), range2d.getHeight()));
-
-    cv::cuda::GpuMat warpedPerspectiveAffineImg2;
-    cv::cuda::warpAffine (warpedPerspectiveImg2, warpedPerspectiveAffineImg2, A, cv::Size (range2d.getWidth(), range2d.getHeight()));
+    // affinely warp image 2 so that
+    // it is sized and positioned correctly
+    // in relation to image 1
+    cv::cuda::GpuMat warpedPerspectiveAffineImg2_gpu;
+    cv::cuda::warpAffine (warpedPerspectiveImg2_gpu, warpedPerspectiveAffineImg2_gpu, A, cv::Size (range2d.getWidth(), range2d.getHeight()));
+    printGpuMatReport(warpedPerspectiveAffineImg2_gpu, "warpedPerspectiveAffineImg2_gpu");
 
     cv::cuda::GpuMat mask_gpu;
-    cv::cuda::threshold (warpedPerspectiveAffineImg2, mask_gpu, 1, 255, cv::THRESH_BINARY);
-    int type = warpedPerspectiveImg1.type();
+    cv::cuda::threshold (warpedPerspectiveAffineImg2_gpu, mask_gpu, 1, 255, cv::THRESH_BINARY);
+    int type = warpedPerspectiveImg1_gpu.type();
 
-    warpedPerspectiveImg1.convertTo (warpedPerspectiveImg1, CV_32FC3);
-    warpedPerspectiveAffineImg2.convertTo (warpedPerspectiveAffineImg2, CV_32FC3);
+    warpedPerspectiveImg1_gpu.convertTo (warpedPerspectiveImg1_gpu, CV_32FC3);
+    warpedPerspectiveAffineImg2_gpu.convertTo (warpedPerspectiveAffineImg2_gpu, CV_32FC3);
     mask_gpu.convertTo (mask_gpu, CV_32FC3, 1.0/255);
     cv::Mat mask;
     mask_gpu.download (mask);
 
-    cv::cuda::GpuMat dst (warpedPerspectiveAffineImg2.size(), warpedPerspectiveAffineImg2.type());
-    cv::cuda::multiply (mask_gpu, warpedPerspectiveAffineImg2, warpedPerspectiveAffineImg2);
+    cv::cuda::GpuMat dst (warpedPerspectiveAffineImg2_gpu.size(), warpedPerspectiveAffineImg2_gpu.type());
+    cv::cuda::multiply (mask_gpu, warpedPerspectiveAffineImg2_gpu, warpedPerspectiveAffineImg2_gpu);
 
     cv::Mat diff = cv::Scalar::all (1.0) - mask;
     cv::cuda::GpuMat diff_gpu (diff);
-    cv::cuda::multiply(diff_gpu, warpedPerspectiveImg1, warpedPerspectiveImg1);
-    cv::cuda::add (warpedPerspectiveImg1, warpedPerspectiveAffineImg2, dst);
+    cv::cuda::multiply(diff_gpu, warpedPerspectiveImg1_gpu, warpedPerspectiveImg1_gpu);
+    cv::cuda::add (warpedPerspectiveImg1_gpu, warpedPerspectiveAffineImg2_gpu, dst);
     dst.convertTo (dst, type);
 
     cv::Mat ret;
@@ -359,12 +391,12 @@ cv::Mat combine (std::vector<cv::Mat>& imageList) {
     cv::Mat result = imageList[0];
     for (int i = 1; i < imageList.size(); i++) {
         cv::Mat image = imageList[i];
-        cout << i << endl;
+        std::cout << i << std::endl;
         auto start = high_resolution_clock::now();
         result = combinePair (result, image);
         auto end = high_resolution_clock::now();
         auto duration = duration_cast<microseconds> (end-start);
-        cout << "time taken by the functions: " << duration.count() << endl;
+        std::cout << "time taken by the functions: " << duration.count() << std::endl;
         float h = result.rows;
         float w = result.cols;
         if (h > 4000 || w > 4000) {
@@ -379,8 +411,9 @@ cv::Mat combine (std::vector<cv::Mat>& imageList) {
                 h = h * wx;
             }
         }
-        cout << h << " " << w << endl;
+        std::cout << "result(" << w << "," << h << ")" << std::endl;
         cv::resize (result, result, cv::Size (w, h));
+        std::cout << "________________________________________" << std::endl;
     }
     return result;
 }
