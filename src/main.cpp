@@ -359,10 +359,9 @@ cv::Mat combinePair (cv::Mat& img1, cv::Mat& img2) {
     std::cout << "range2d(" << range2d.getWidth() << "," << range2d.getHeight() << ")" << std::endl;
     cv::Mat translation = (cv::Mat_<double>(3,3) << 1, 0, -range2d.min_x, 0, 1, -range2d.min_y, 0, 0, 1);
 
-    // homographically warp each image so that
-    // it is sized the same as the bounding rectangle
-    // who was sized to exactly accomodate
-    // the 4 corners of both of the images
+    // homographically warp each image so that it is sized correctly 
+    // relative to the size of the bounding rectangle
+    // who was sized to exactly accomodate the 4 corners of both of the images
     cv::cuda::GpuMat warpedPerspectiveImg1_gpu;
     cv::cuda::warpPerspective (img1_gpu, warpedPerspectiveImg1_gpu, translation, cv::Size (range2d.getWidth(), range2d.getHeight()));
     printGpuMatReport(img1_gpu, "img1_gpu");
@@ -375,8 +374,9 @@ cv::Mat combinePair (cv::Mat& img1, cv::Mat& img2) {
     printGpuMatReport(warpedPerspectiveImg2_gpu, "warpedPerspectiveImg2_gpu");
     writeIntermediateImage(warpedPerspectiveImg2_gpu, "warpedPerspectiveImg2_gpu", call_count, 2);
 
-    // affinely warp image 2 so that
-    // it is positioned correctly in relation to image 1
+    // affinely warp image 2 so that it is positioned correctly
+    // within the bounding rectangle relative to the position of image 1
+    // (remember the affine transformation was created by matching keypoints of the two images)
     cv::cuda::GpuMat warpedPerspectiveAffineImg2_gpu;
     cv::cuda::warpAffine (warpedPerspectiveImg2_gpu, warpedPerspectiveAffineImg2_gpu, A, cv::Size (range2d.getWidth(), range2d.getHeight()));
     printGpuMatReport(warpedPerspectiveAffineImg2_gpu, "warpedPerspectiveAffineImg2_gpu");
