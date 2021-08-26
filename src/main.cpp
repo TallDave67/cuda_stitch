@@ -103,6 +103,40 @@ void printMat(cv::Mat& mat) {
     }
 }
 
+void printGpuMatReport(cv::cuda::GpuMat & mat_gpu, const char * name)
+{
+    std::cout << ">>> matrix = " << name << std::endl;
+    
+    // convert from gpu matrix
+    cv::Mat mat;
+    mat_gpu.download (mat);
+
+    // change to grayscale
+    //cv::cvtColor(mat, mat, cv::COLOR_BGR2GRAY);
+    //int type = mat.type();
+    //int cn = CV_MAT_CN(type);
+    //std::cout << "    type = " << type << ", cn = " << cn << std::endl;
+
+    // dimensions
+    std::cout << "    width = " << mat.cols << ", height = " << mat.rows << std::endl;
+
+    // number of non-zero elements
+    //std::cout << "    num non-zero elements = " << cv::countNonZero(mat)  << std::endl;
+}
+
+void writeIntermediateImage(cv::cuda::GpuMat& mat_gpu, const char* name, int iteration, int filenum) {
+    // convert from gpu matrix
+    cv::Mat mat;
+    mat_gpu.download (mat);
+
+    // construct filename
+    string intermediate_dir = "../../output/intermediate/";
+    string intermediate_filename = intermediate_dir + to_string(iteration) + "_" + to_string(filenum) + "_" + name  +  + ".png";
+
+    // write image
+    cv::imwrite(intermediate_filename, mat);
+}
+
 void getTransformationToOriginPlane (imageData& pose, cv::Mat& transformation) {
     
     // get our 3 rotation angles
@@ -298,28 +332,11 @@ void getAffineTransformation(  float height1, float width1, float height2, float
     getBoundedRangesFromCorners(allCorners, range2d);
 }
 
-void printGpuMatReport(cv::cuda::GpuMat & mat_gpu, const char * name)
-{
-    std::cout << ">>> matrix = " << name << std::endl;
-    
-    // convert from gpu matrix
-    cv::Mat mat;
-    mat_gpu.download (mat);
-
-    // change to grayscale
-    //cv::cvtColor(mat, mat, cv::COLOR_BGR2GRAY);
-    //int type = mat.type();
-    //int cn = CV_MAT_CN(type);
-    //std::cout << "    type = " << type << ", cn = " << cn << std::endl;
-
-    // dimensions
-    std::cout << "    width = " << mat.cols << ", height = " << mat.rows << std::endl;
-
-    // number of non-zero elements
-    //std::cout << "    num non-zero elements = " << cv::countNonZero(mat)  << std::endl;
-}
-
 cv::Mat combinePair (cv::Mat& img1, cv::Mat& img2) {
+    static int call_count = 0;
+    call_count++;
+
+    // convert to a form our gpu can handle
     cv::cuda::GpuMat img1_gpu (img1), img2_gpu (img2);
 
     // get keypoint descriptors for the two images
@@ -350,36 +367,44 @@ cv::Mat combinePair (cv::Mat& img1, cv::Mat& img2) {
     cv::cuda::warpPerspective (img1_gpu, warpedPerspectiveImg1_gpu, translation, cv::Size (range2d.getWidth(), range2d.getHeight()));
     printGpuMatReport(img1_gpu, "img1_gpu");
     printGpuMatReport(warpedPerspectiveImg1_gpu, "warpedPerspectiveImg1_gpu");
+    writeIntermediateImage(warpedPerspectiveImg1_gpu, "warpedPerspectiveImg1_gpu", call_count, 1);
     //
     cv::cuda::GpuMat warpedPerspectiveImg2_gpu;
     cv::cuda::warpPerspective (img2_gpu, warpedPerspectiveImg2_gpu, translation, cv::Size (range2d.getWidth(), range2d.getHeight()));
     printGpuMatReport(img2_gpu, "img2_gpu");
     printGpuMatReport(warpedPerspectiveImg2_gpu, "warpedPerspectiveImg2_gpu");
+    writeIntermediateImage(warpedPerspectiveImg2_gpu, "warpedPerspectiveImg2_gpu", call_count, 2);
 
     // affinely warp image 2 so that
     // it is positioned correctly in relation to image 1
     cv::cuda::GpuMat warpedPerspectiveAffineImg2_gpu;
     cv::cuda::warpAffine (warpedPerspectiveImg2_gpu, warpedPerspectiveAffineImg2_gpu, A, cv::Size (range2d.getWidth(), range2d.getHeight()));
     printGpuMatReport(warpedPerspectiveAffineImg2_gpu, "warpedPerspectiveAffineImg2_gpu");
+    writeIntermediateImage(warpedPerspectiveAffineImg2_gpu, "warpedPerspectiveAffineImg2_gpu", call_count, 3);
 
     cv::cuda::GpuMat mask_gpu;
     cv::cuda::threshold (warpedPerspectiveAffineImg2_gpu, mask_gpu, 1, 255, cv::THRESH_BINARY);
     int type = warpedPerspectiveImg1_gpu.type();
 
     warpedPerspectiveImg1_gpu.convertTo (warpedPerspectiveImg1_gpu, CV_32FC3);
+    writeIntermediateImage(warpedPerspectiveImg1_gpu, "warpedPerspectiveImg1_gpu_CV_32FC3", call_count, 4);
     warpedPerspectiveAffineImg2_gpu.convertTo (warpedPerspectiveAffineImg2_gpu, CV_32FC3);
+    writeIntermediateImage(warpedPerspectiveAffineImg2_gpu, "warpedPerspectiveAffineImg2_gpu_CV_32FC3", call_count, 5);
     mask_gpu.convertTo (mask_gpu, CV_32FC3, 1.0/255);
     cv::Mat mask;
     mask_gpu.download (mask);
 
     cv::cuda::GpuMat dst (warpedPerspectiveAffineImg2_gpu.size(), warpedPerspectiveAffineImg2_gpu.type());
     cv::cuda::multiply (mask_gpu, warpedPerspectiveAffineImg2_gpu, warpedPerspectiveAffineImg2_gpu);
+    writeIntermediateImage(warpedPerspectiveAffineImg2_gpu, "warpedPerspectiveAffineImg2_gpu_multiply_by_mask_gpu", call_count, 6);
 
     cv::Mat diff = cv::Scalar::all (1.0) - mask;
     cv::cuda::GpuMat diff_gpu (diff);
     cv::cuda::multiply(diff_gpu, warpedPerspectiveImg1_gpu, warpedPerspectiveImg1_gpu);
+    writeIntermediateImage(warpedPerspectiveImg1_gpu, "warpedPerspectiveImg1_gpu_multiply_by_diff_gpu", call_count, 7);
     cv::cuda::add (warpedPerspectiveImg1_gpu, warpedPerspectiveAffineImg2_gpu, dst);
     dst.convertTo (dst, type);
+    writeIntermediateImage(dst, "warpedPerspectiveImg1_gpu_add_warpedPerspectiveAffineImg2_gpu", call_count, 8);
 
     cv::Mat ret;
     dst.download (ret);
