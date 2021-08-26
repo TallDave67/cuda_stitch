@@ -387,16 +387,16 @@ cv::Mat combinePair (cv::Mat& img1, cv::Mat& img2) {
     int type = warpedPerspectiveImg1_gpu.type();
 
     warpedPerspectiveImg1_gpu.convertTo (warpedPerspectiveImg1_gpu, CV_32FC3);
-    writeIntermediateImage(warpedPerspectiveImg1_gpu, "warpedPerspectiveImg1_gpu_CV_32FC3", call_count, 4);
+    //writeIntermediateImage(warpedPerspectiveImg1_gpu, "warpedPerspectiveImg1_gpu_CV_32FC3", call_count, 4);
     warpedPerspectiveAffineImg2_gpu.convertTo (warpedPerspectiveAffineImg2_gpu, CV_32FC3);
-    writeIntermediateImage(warpedPerspectiveAffineImg2_gpu, "warpedPerspectiveAffineImg2_gpu_CV_32FC3", call_count, 5);
+    //writeIntermediateImage(warpedPerspectiveAffineImg2_gpu, "warpedPerspectiveAffineImg2_gpu_CV_32FC3", call_count, 5);
     mask_gpu.convertTo (mask_gpu, CV_32FC3, 1.0/255);
     cv::Mat mask;
     mask_gpu.download (mask);
 
     cv::cuda::GpuMat dst (warpedPerspectiveAffineImg2_gpu.size(), warpedPerspectiveAffineImg2_gpu.type());
     cv::cuda::multiply (mask_gpu, warpedPerspectiveAffineImg2_gpu, warpedPerspectiveAffineImg2_gpu);
-    writeIntermediateImage(warpedPerspectiveAffineImg2_gpu, "warpedPerspectiveAffineImg2_gpu_multiply_by_mask_gpu", call_count, 6);
+    //writeIntermediateImage(warpedPerspectiveAffineImg2_gpu, "warpedPerspectiveAffineImg2_gpu_multiply_by_mask_gpu", call_count, 6);
 
     cv::Mat diff = cv::Scalar::all (1.0) - mask;
     cv::cuda::GpuMat diff_gpu (diff);
