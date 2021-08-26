@@ -124,14 +124,24 @@ void printGpuMatReport(cv::cuda::GpuMat & mat_gpu, const char * name)
     //std::cout << "    num non-zero elements = " << cv::countNonZero(mat)  << std::endl;
 }
 
-void writeIntermediateImage(cv::cuda::GpuMat& mat_gpu, const char* name, int iteration, int filenum) {
+void writeIntermediateImage(cv::cuda::GpuMat& mat_gpu, const char* name, int iteration, int step, int original_type = -1) {
     // convert from gpu matrix
     cv::Mat mat;
-    mat_gpu.download (mat);
+    if (original_type != -1)
+    {
+        // if we are passed an original type we must convert the pixel data type of the gpu matrix
+        cv::cuda::GpuMat mat_gpu_original;
+        mat_gpu.convertTo (mat_gpu_original, original_type);
+        mat_gpu_original.download (mat);
+    }
+    else
+    {
+        mat_gpu.download (mat);
+    }
 
     // construct filename
     string intermediate_dir = "../../output/intermediate/";
-    string intermediate_filename = intermediate_dir + to_string(iteration) + "_" + to_string(filenum) + "_" + name  +  + ".png";
+    string intermediate_filename = intermediate_dir + to_string(iteration) + "_" + to_string(step) + "_" + name  +  + ".png";
 
     // write image
     cv::imwrite(intermediate_filename, mat);
@@ -335,9 +345,16 @@ void getAffineTransformation(  float height1, float width1, float height2, float
 cv::Mat combinePair (cv::Mat& img1, cv::Mat& img2) {
     static int call_count = 0;
     call_count++;
+    int step = 0;
 
     // convert to a form our gpu can handle
     cv::cuda::GpuMat img1_gpu (img1), img2_gpu (img2);
+
+    // save original image type (type is the data type used to store each pixel)
+    // we will later convert image types to a floating point for math calculations
+    // and then when done we will convert back to the original unsigned 8bit type
+    // which is necessary for image display or writing file to disk 
+    int original_type = img1_gpu.type();
 
     // get keypoint descriptors for the two images
     cv::cuda::SURF_CUDA detector;
@@ -366,13 +383,13 @@ cv::Mat combinePair (cv::Mat& img1, cv::Mat& img2) {
     cv::cuda::warpPerspective (img1_gpu, warpedPerspectiveImg1_gpu, translation, cv::Size (range2d.getWidth(), range2d.getHeight()));
     printGpuMatReport(img1_gpu, "img1_gpu");
     printGpuMatReport(warpedPerspectiveImg1_gpu, "warpedPerspectiveImg1_gpu");
-    writeIntermediateImage(warpedPerspectiveImg1_gpu, "warpedPerspectiveImg1_gpu", call_count, 1);
+    writeIntermediateImage(warpedPerspectiveImg1_gpu, "warpedPerspectiveImg1_gpu", call_count, ++step);
     //
     cv::cuda::GpuMat warpedPerspectiveImg2_gpu;
     cv::cuda::warpPerspective (img2_gpu, warpedPerspectiveImg2_gpu, translation, cv::Size (range2d.getWidth(), range2d.getHeight()));
     printGpuMatReport(img2_gpu, "img2_gpu");
     printGpuMatReport(warpedPerspectiveImg2_gpu, "warpedPerspectiveImg2_gpu");
-    writeIntermediateImage(warpedPerspectiveImg2_gpu, "warpedPerspectiveImg2_gpu", call_count, 2);
+    writeIntermediateImage(warpedPerspectiveImg2_gpu, "warpedPerspectiveImg2_gpu", call_count, ++step);
 
     // affinely warp image 2 so that it is positioned correctly
     // within the bounding rectangle relative to the position of image 1
@@ -380,35 +397,46 @@ cv::Mat combinePair (cv::Mat& img1, cv::Mat& img2) {
     cv::cuda::GpuMat warpedPerspectiveAffineImg2_gpu;
     cv::cuda::warpAffine (warpedPerspectiveImg2_gpu, warpedPerspectiveAffineImg2_gpu, A, cv::Size (range2d.getWidth(), range2d.getHeight()));
     printGpuMatReport(warpedPerspectiveAffineImg2_gpu, "warpedPerspectiveAffineImg2_gpu");
-    writeIntermediateImage(warpedPerspectiveAffineImg2_gpu, "warpedPerspectiveAffineImg2_gpu", call_count, 3);
+    writeIntermediateImage(warpedPerspectiveAffineImg2_gpu, "warpedPerspectiveAffineImg2_gpu", call_count, ++step);
 
+    // apply a threshhold to our affinely warped image 2 and save as a mask
+    // this mask will indicate the portion of our combined images reserved for our image 2
     cv::cuda::GpuMat mask_gpu;
     cv::cuda::threshold (warpedPerspectiveAffineImg2_gpu, mask_gpu, 1, 255, cv::THRESH_BINARY);
-    int type = warpedPerspectiveImg1_gpu.type();
+    writeIntermediateImage(mask_gpu, "warpedPerspectiveAffineImg2_mask_gpu", call_count, ++step);
 
+    // convert our 2 images and our mask to 32bit floating point type for our math calculations
     warpedPerspectiveImg1_gpu.convertTo (warpedPerspectiveImg1_gpu, CV_32FC3);
-    //writeIntermediateImage(warpedPerspectiveImg1_gpu, "warpedPerspectiveImg1_gpu_CV_32FC3", call_count, 4);
     warpedPerspectiveAffineImg2_gpu.convertTo (warpedPerspectiveAffineImg2_gpu, CV_32FC3);
-    //writeIntermediateImage(warpedPerspectiveAffineImg2_gpu, "warpedPerspectiveAffineImg2_gpu_CV_32FC3", call_count, 5);
     mask_gpu.convertTo (mask_gpu, CV_32FC3, 1.0/255);
+
+    // create an empty combined image of the correct size type
+    cv::cuda::GpuMat combined_gpu (warpedPerspectiveAffineImg2_gpu.size(), warpedPerspectiveAffineImg2_gpu.type());
+
+    // multiply our affinely warped image 2 by our mask to get only the overlay image data
+    cv::cuda::multiply (mask_gpu, warpedPerspectiveAffineImg2_gpu, warpedPerspectiveAffineImg2_gpu);
+    writeIntermediateImage(warpedPerspectiveAffineImg2_gpu, "warpedPerspectiveAffineImg2_gpu_multiply_by_mask_gpu", call_count, ++step, original_type);
+
+    // create our difference mask which will be used to carve out a place in our image 1 to receive our image 2
     cv::Mat mask;
     mask_gpu.download (mask);
+    cv::Mat difference_mask = cv::Scalar::all (1.0) - mask;
+    cv::cuda::GpuMat difference_mask_gpu (difference_mask);
+    writeIntermediateImage(difference_mask_gpu, "warpedPerspectiveAffineImg2_difference_mask_gpu", call_count, ++step, original_type);
 
-    cv::cuda::GpuMat dst (warpedPerspectiveAffineImg2_gpu.size(), warpedPerspectiveAffineImg2_gpu.type());
-    cv::cuda::multiply (mask_gpu, warpedPerspectiveAffineImg2_gpu, warpedPerspectiveAffineImg2_gpu);
-    //writeIntermediateImage(warpedPerspectiveAffineImg2_gpu, "warpedPerspectiveAffineImg2_gpu_multiply_by_mask_gpu", call_count, 6);
+    // multiply our perspective warped image 1 by our difference mask to get the portion of the image data we will retain
+    cv::cuda::multiply(difference_mask_gpu, warpedPerspectiveImg1_gpu, warpedPerspectiveImg1_gpu);
+    writeIntermediateImage(warpedPerspectiveImg1_gpu, "warpedPerspectiveImg1_gpu_multiply_by_difference_mask_gpu", call_count, ++step, original_type);
 
-    cv::Mat diff = cv::Scalar::all (1.0) - mask;
-    cv::cuda::GpuMat diff_gpu (diff);
-    cv::cuda::multiply(diff_gpu, warpedPerspectiveImg1_gpu, warpedPerspectiveImg1_gpu);
-    writeIntermediateImage(warpedPerspectiveImg1_gpu, "warpedPerspectiveImg1_gpu_multiply_by_diff_gpu", call_count, 7);
-    cv::cuda::add (warpedPerspectiveImg1_gpu, warpedPerspectiveAffineImg2_gpu, dst);
-    dst.convertTo (dst, type);
-    writeIntermediateImage(dst, "warpedPerspectiveImg1_gpu_add_warpedPerspectiveAffineImg2_gpu", call_count, 8);
+    // add our two correctly masked image 1 and image 2 to get the combined image
+    cv::cuda::add (warpedPerspectiveImg1_gpu, warpedPerspectiveAffineImg2_gpu, combined_gpu);
+    combined_gpu.convertTo (combined_gpu, original_type);
+    writeIntermediateImage(combined_gpu, "combined_gpu", call_count, ++step);
 
-    cv::Mat ret;
-    dst.download (ret);
-    return ret;
+    // get a cpu version of the combined image
+    cv::Mat combined;
+    combined_gpu.download (combined);
+    return combined;
 }
 
 cv::Mat combine (std::vector<cv::Mat>& imageList) {
