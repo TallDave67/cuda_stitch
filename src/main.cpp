@@ -280,7 +280,7 @@ void getScaledPaddedTransformation(cv::Mat& transformation, imageSize2d& size2d,
     //cout << "warpedCorners = " << warpedCorners << endl;
     //cout << "transformation = " << transformation << endl;
 
-    //get x & y ranges for the warped corners that do not go outside of min/max bounds
+    //get x & y range to encompass all the warped corners
     vector <vector<cv::Point2f>> rectangles;
     rectangles.push_back(warpedCorners);
     getRangeFromRectangleCorners(rectangles, range2d);
