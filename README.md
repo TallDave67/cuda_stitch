@@ -124,4 +124,4 @@ Select images during algorithm execution where image C was being combined with t
 After 4 iterations the 5 images are combined into the final result.
 
 <em>Output image ABCDE</em>
-<img src="https://cuberanger.com/wp-content/uploads/2021/08/result.png" />
+<img src="https://github.com/TallDave67/cuda_stitch/blob/master/datasets/1/output/result.png" />
