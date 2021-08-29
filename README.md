@@ -103,7 +103,7 @@ Select images during algorithm execution where image C was being combined with t
 <img src="https://github.com/TallDave67/cuda_stitch/blob/master/datasets/1/intermediate-educational/2_1_warpedPerspectiveImg1_gpu.png" />
 
 <em>Step 2.3.2: warpPerspective image C</em>
-<img src="https://cuberanger.com/wp-content/uploads/2021/08/2_3_2_warpedPerspectiveImgC_gpu.png" />
+<img src="https://github.com/TallDave67/cuda_stitch/blob/master/datasets/1/intermediate-educational/2_2_warpedPerspectiveImg2_gpu.png" />
 
 <em>Step 2.3.3: warpAffine image C</em>
 <img src="https://cuberanger.com/wp-content/uploads/2021/08/2_3_3_warpedPerspectiveAffineImgC_gpu.png" />
