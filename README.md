@@ -100,7 +100,7 @@ Five different Aerial views of Fishermans Wharf in San Francisco.
 Select images during algorithm execution where image C was being combined with the previous combination of image A and image B.
 
 <em>Step 2.3.1: warpPerspective image AB</em>
-<img src="https://cuberanger.com/wp-content/uploads/2021/08/2_3_1_warpedPerspectiveImgAB_gpu.png" />
+<img src="https://github.com/TallDave67/cuda_stitch/blob/master/datasets/1/intermediate-educational/2_1_warpedPerspectiveImg1_gpu.png" />
 
 <em>Step 2.3.2: warpPerspective image C</em>
 <img src="https://cuberanger.com/wp-content/uploads/2021/08/2_3_2_warpedPerspectiveImgC_gpu.png" />
