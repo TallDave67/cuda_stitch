@@ -78,15 +78,20 @@ We add the two masked images and we are done. The two images have been combined!
 
 Five different Aerial views of Fishermans Wharf in San Francisco.
 
-[Image A](https://github.com/TallDave67/cuda_stitch/blob/master/datasets/1/input/1.png)
+<em>Image A</em>
+<img src="https://github.com/TallDave67/cuda_stitch/blob/master/datasets/1/input/1.png" />
 
-[Image B](https://github.com/TallDave67/cuda_stitch/blob/master/datasets/1/input/2.png)
+<em>Image B</em>
+<img src="https://github.com/TallDave67/cuda_stitch/blob/master/datasets/1/input/2.png" />
 
-[Image C](https://github.com/TallDave67/cuda_stitch/blob/master/datasets/1/input/3.png)
+<em>Image C</em>
+<img src="https://github.com/TallDave67/cuda_stitch/blob/master/datasets/1/input/3.png" />
 
-[Image D](https://github.com/TallDave67/cuda_stitch/blob/master/datasets/1/input/4.png)
+<em>Image D</em>
+<img src="https://github.com/TallDave67/cuda_stitch/blob/master/datasets/1/input/4.png" />
 
-[Image E](https://github.com/TallDave67/cuda_stitch/blob/master/datasets/1/input/5.png)
+<em>Image E</em>
+<img src="https://github.com/TallDave67/cuda_stitch/blob/master/datasets/1/input/5.png" />
 
 &nbsp;
 
