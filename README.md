@@ -112,7 +112,7 @@ Select images during algorithm execution where image C was being combined with t
 <img src="https://github.com/TallDave67/cuda_stitch/blob/master/datasets/1/intermediate-educational/2_4_warpedPerspectiveAffineImg2_mask_gpu.png" />
 
 <em>Step 2.3.7: difference mask multiplied by image AB</em>
-<img src="https://cuberanger.com/wp-content/uploads/2021/08/2_3_7_warpedPerspectiveImgAB_gpu_multiply_by_difference_mask_gpu.png" />
+<img src="https://github.com/TallDave67/cuda_stitch/blob/master/datasets/1/intermediate-educational/2_7_warpedPerspectiveImg1_gpu_multiply_by_difference_mask_gpu.png" />
 
 <em>Step 2.3.8: combined image ABC</em>
 <img src="https://cuberanger.com/wp-content/uploads/2021/08/2_3_8_combined_gpu.png" />
